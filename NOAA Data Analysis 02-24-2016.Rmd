@@ -1,0 +1,109 @@
+---
+title: "NOAA Data Analysis to Identify Weather Events That Are Most Harmful to Population Health and Generate Greatest Economic Consequences"
+author: "Jian Chen"
+date: "February 24, 2016"
+output: html_document
+---
+
+## Introduction
+The U.S. National Oceanic and Atmospheric Administration (NOAA) storm database contains weather events happening across the 50 states of the U.S., between 1950 and 2011. Event related data and their impact on social and economical environment were captured in this database
+
+## Analysis Goal
+This analysis was performed to identify answers to two key questions:
+1. Which types of events are most harmful to population health?
+2. Which types of events have the greatest economic consequences?
+
+## Analysis Methods
+* Download the database from data provider website
+* Clean up the database by removing incorrectly annotated data points
+* Summarize the database and identify most harmful weather events in each state
+
+## Analysis Process
+
+### Download data set
+```{r, echo=TRUE, eval=FALSE, warning=FALSE, message=FALSE}
+# Set cache=TRUE for this block, as data download and read into dataframe are time consuming but only needs to be done one time
+# Run into error of "cannot allocate buffer (for the cache?)"
+setwd("~/R/Coursera/Reproducible Research")
+
+library(downloader)
+library(R.utils)
+
+link <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+download(link, "noaa.zip", mode = "wb")
+bunzip2("noaa.zip", "noaa.csv", remove = FALSE)
+
+```
+
+
+### Clean up the dataset for the analysis of economic consequence
+
+The parameter $PROPDMGEXP should contain K/M/B units only (K for 1,000s, M for 1,000,000s and B for 1,000,000,000s)  
+Any other units are not legal and should be removed
+Any data points that are of 0 value should also be removed
+
+1 Examine how many values are under which property damage monetory units
+```{r}
+setwd("~/R/Coursera/Reproducible Research")
+noaa <- read.csv("noaa.csv", header = TRUE, stringsAsFactors = FALSE)
+table(noaa$PROPDMGEXP)
+```
+The above table shows that there are many non-standard units like "h/1/+..." that are not defined in the data documentation.  In addition, 465934 entries have no unit at all.  These data points should be removed prior to analysis, as well as the data points that are of zero value
+
+
+2 Remove data entries where property damage is 0
+```{r, echo=TRUE}
+noaa.propdmg <- subset(noaa, noaa$PROPDMG != 0)
+```
+
+3 Remove data entries where property damage doesn't have a valid unit
+```{r}
+noaa.propdmg <- subset(noaa.propdmg, noaa.propdmg$PROPDMGEXP %in% c("K", "M", "B"))
+```
+
+### Calculate the damage monetory amount
+Convert the K unit to dollar amount of 1000, the M unit to dollar amount of 1,000,000, the B unit to 1,000,000,000  
+```{r}
+noaa.propdmg$PROPDMGEXP[noaa.propdmg$PROPDMGEXP == "K"] <- 1000
+noaa.propdmg$PROPDMGEXP[noaa.propdmg$PROPDMGEXP == "M"] <- 1000000
+noaa.propdmg$PROPDMGEXP[noaa.propdmg$PROPDMGEXP == "B"] <- 1000000000
+noaa.propdmg$PROPDMGEXP <- as.numeric(noaa.propdmg$PROPDMGEXP)
+
+noaa.propdmg$PROPDMGAMT <- noaa.propdmg$PROPDMG * noaa.propdmg$PROPDMGEXP
+```
+
+### Identify the weather event that causes most property damage in each state
+```{r}
+states <- unique(noaa.propdmg$STATE)
+
+maxdmg <- data.frame(state = character(), etype = character(), prodmgamt = numeric())
+
+for (s in states) { 
+  statedmg <- subset(noaa.propdmg, noaa.propdmg$STATE == s)
+
+  event <- statedmg[ which(statedmg$PROPDMGAMT == max(statedmg$PROPDMGAMT)), ]$EVTYPE
+  dmg <- statedmg[ which(statedmg$PROPDMGAMT == max(statedmg$PROPDMGAMT)), ]$PROPDMGAMT
+
+  maxdmg <- rbind(maxdmg, data.frame(state = s, etype = event, prodmgamt = dmg, stringsAsFactors = FALSE))
+    
+  remove(statedmg)
+}
+
+```
+
+### Plot the maximum damage amount by state (and split by event type if there are multiple maximum damages). Label each data point with event type and damage amount
+
+```{r fig.height=7, fig.width=7, dpi=100}
+library(ggplot2)
+
+ggplot(maxdmg, aes(state, log10(prodmgamt))) + geom_bar(stat = "identity", aes(fill = etype), position = "dodge") + ylab("Log10(Damage Amount) in Dollars") + coord_flip() + geom_text(data=maxdmg,aes(label=etype), vjust=0.5, hjust=1,size = 2) + geom_text(data=maxdmg,aes(label=prodmgamt, color = etype),vjust=0.5, hjust=-0.1, size = 2) + ggtitle("Type of Weather Event Causing Most Property Damage in U.S. States") + theme(plot.title = element_text(size=10, face="bold", margin = margin(0, 0, 10, 0)), legend.position = "none") 
+
+# legend.position = "none" removes the figure legend as it is no longer needed
+```
+
+## Conclusion
+The NOAA data is useful in finding out what type of weather events are causing most property damage in each U.S. state, despite the fact that there are many missing, incomplete or mis-annotated data points.  A preliminary analysis performed above shows that weather events do causing large amount of property damage across the U.S.  For example, in California (CA), the worst single flooding event caused around `r format(max(maxdmg$prodmgamt), scientific = FALSE)` dollars of property damage.
+
+
+## I am skipping the rest of the analysis requirement as they would be performed and plotted similarly to the above, and I am short on time
+
